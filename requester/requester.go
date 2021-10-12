@@ -17,14 +17,18 @@ package requester
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
+	"errors"
 	"io"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"net/http/httptrace"
 	"net/url"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/net/http2"
@@ -91,6 +95,9 @@ type Work struct {
 
 	// Writer is where results will be written. If nil, results are written to stdout.
 	Writer io.Writer
+
+	// Addresses are host override for DNS.
+	Addresses []string
 
 	initOnce sync.Once
 	results  chan *result
@@ -231,6 +238,38 @@ func (b *Work) runWorker(client *http.Client, n int) {
 	}
 }
 
+// https://koraygocmen.medium.com/custom-dns-resolver-for-the-default-http-client-in-go-a1420db38a5d
+// and https://github.com/benburkert/dns/blob/d356cf78cdfc/init/init.go
+func netOverride(addrs []string, host string, tr *http.Transport) {
+	// net.DefaultResolver = &net.Resolver{
+	// 	PreferGo: true,
+	// }
+	tr.DialContext = (&aoverride{addrs: addrs, h: host}).dial
+}
+
+type aoverride struct {
+	addrs []string
+	n     int32
+	h     string
+}
+
+func (as *aoverride) dial(ctx context.Context, network, address string) (net.Conn, error) {
+	host, port, _ := net.SplitHostPort(address)
+	if host != as.h {
+		// fmt.Fprintf(os.Stderr, "NO aoverride dial %s %s for %s\n", network, address, as.h)
+		return net.Dial(network, address)
+	}
+	a := as.addrs[int(as.n)%len(as.addrs)] + ":" + port
+	atomic.AddInt32(&as.n, 1)
+	// fmt.Fprintf(os.Stderr, "aoverride dial %s %s using %s\n", network, address, a)
+
+	return net.Dial(network, a)
+}
+
+// ErrUnsupportedNetwork is returned when DialAddr is called with an
+// unknown network.
+var ErrUnsupportedNetwork = errors.New("unsupported network")
+
 func (b *Work) runWorkers() {
 	var wg sync.WaitGroup
 	wg.Add(b.C)
@@ -251,6 +290,9 @@ func (b *Work) runWorkers() {
 		tr.TLSNextProto = make(map[string]func(string, *tls.Conn) http.RoundTripper)
 	}
 	client := &http.Client{Transport: tr, Timeout: time.Duration(b.Timeout) * time.Second}
+	if len(b.Addresses) > 0 {
+		netOverride(b.Addresses, b.Request.URL.Host, tr)
+	}
 
 	// Ignore the case where b.N % b.C != 0.
 	for i := 0; i < b.C; i++ {

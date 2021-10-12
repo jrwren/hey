@@ -16,6 +16,7 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -64,6 +65,7 @@ var (
 	disableKeepAlives  = flag.Bool("disable-keepalive", false, "")
 	disableRedirects   = flag.Bool("disable-redirects", false, "")
 	proxyAddr          = flag.String("x", "", "")
+	addresses          = flag.String("addresses", "", "")
 )
 
 var usage = `Usage: hey [options...] <url>
@@ -94,6 +96,7 @@ Options:
   -h2 Enable HTTP/2.
 
   -host	HTTP Host header.
+  -addresses Override DNS and use addresses in this file.
 
   -disable-compression  Disable compression.
   -disable-keepalive    Disable keep-alive, prevents re-use of TCP
@@ -234,6 +237,7 @@ func main() {
 		H2:                 *h2,
 		ProxyAddr:          proxyURL,
 		Output:             *output,
+		Addresses:          readAddresses(*addresses),
 	}
 	w.Init()
 
@@ -286,4 +290,28 @@ func (h *headerSlice) String() string {
 func (h *headerSlice) Set(value string) error {
 	*h = append(*h, value)
 	return nil
+}
+
+func readAddresses(fname string) (as []string) {
+	f, err := os.Open(fname)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error reading addresses: %s\n", err)
+		os.Exit(2)
+	}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		a := scanner.Text()
+		if a == "" {
+			continue
+		}
+		as = append(as, a)
+	}
+	err = scanner.Err()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error reading addresses: %s\n", err)
+		os.Exit(2)
+	}
+	fmt.Fprintf(os.Stderr, "using addresses %v\n", as)
+	return as
 }
