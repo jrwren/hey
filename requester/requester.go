@@ -193,6 +193,10 @@ func (b *Work) makeRequest(c *http.Client) {
 	if err == nil {
 		size = resp.ContentLength
 		code = resp.StatusCode
+		// if code >= 500 {
+		// 	log.Printf("server error: %d, %v", resp.StatusCode,
+		// 		resp.Header)
+		// }
 		io.Copy(ioutil.Discard, resp.Body)
 		resp.Body.Close()
 	}
@@ -262,6 +266,11 @@ func (as *aoverride) dial(ctx context.Context, network, address string) (net.Con
 	a := as.addrs[int(as.n)%len(as.addrs)] + ":" + port
 	atomic.AddInt32(&as.n, 1)
 	// fmt.Fprintf(os.Stderr, "aoverride dial %s %s using %s\n", network, address, a)
+
+	// I want to do this, but nettrace is internal :(
+	// trace, _ := ctx.Value(nettrace.TraceKey{}).(*nettrace.Trace)
+	// trace.DNSDone(a, )
+	// So instead???
 
 	return net.Dial(network, a)
 }

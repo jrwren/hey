@@ -194,6 +194,11 @@ func main() {
 		}
 	}
 
+	// JRW sanity
+	// u, _ := gourl.Parse(url)
+	// ips, _ := net.LookupIP(u.Host)
+	// fmt.Printf("%s resolved to %v\n", u.Host, ips)
+
 	req, err := http.NewRequest(method, url, nil)
 	if err != nil {
 		usageAndExit(err.Error())
