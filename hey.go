@@ -17,10 +17,12 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"flag"
 	"fmt"
 	"io/ioutil"
 	"math"
+	"net"
 	"net/http"
 	gourl "net/url"
 	"os"
@@ -66,6 +68,7 @@ var (
 	disableRedirects   = flag.Bool("disable-redirects", false, "")
 	proxyAddr          = flag.String("x", "", "")
 	addresses          = flag.String("addresses", "", "")
+	allAddresses       = flag.Bool("all-addresses", false, "")
 )
 
 var usage = `Usage: hey [options...] <url>
@@ -96,7 +99,10 @@ Options:
   -h2 Enable HTTP/2.
 
   -host	HTTP Host header.
-  -addresses Override DNS and use addresses in this file.
+
+  -addresses			Override DNS and use addresses in this file.
+  -all-addresses		Lookup host portion of URL and use ALL returned
+                        IP addresses.
 
   -disable-compression  Disable compression.
   -disable-keepalive    Disable keep-alive, prevents re-use of TCP
@@ -229,6 +235,20 @@ func main() {
 
 	req.Header = header
 
+	var ipaddrs []string
+	if *addresses != "" {
+		ipaddrs = readAddresses(*addresses)
+	}
+	if *allAddresses {
+		fmt.Println("looking up ", req.URL.Host)
+		ipas, err := net.DefaultResolver.LookupHost(context.Background(), req.URL.Host)
+		if err != nil {
+			errAndExit(err.Error())
+		}
+		fmt.Printf("using %v\n", ipas)
+		ipaddrs = ipas
+	}
+
 	w := &requester.Work{
 		Request:            req,
 		RequestBody:        bodyAll,
@@ -242,7 +262,7 @@ func main() {
 		H2:                 *h2,
 		ProxyAddr:          proxyURL,
 		Output:             *output,
-		Addresses:          readAddresses(*addresses),
+		Addresses:          ipaddrs,
 	}
 	w.Init()
 
@@ -298,6 +318,9 @@ func (h *headerSlice) Set(value string) error {
 }
 
 func readAddresses(fname string) (as []string) {
+	if fname == "" {
+		return nil
+	}
 	f, err := os.Open(fname)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error reading addresses: %s\n", err)
