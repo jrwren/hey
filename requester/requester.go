@@ -20,6 +20,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net"
@@ -258,9 +259,14 @@ type aoverride struct {
 }
 
 func (as *aoverride) dial(ctx context.Context, network, address string) (net.Conn, error) {
-	host, port, _ := net.SplitHostPort(address)
-	if host != as.h {
-		// fmt.Fprintf(os.Stderr, "NO aoverride dial %s %s for %s\n", network, address, as.h)
+	_, port, err := net.SplitHostPort(address)
+	if err!=nil {
+		fmt.Fprintf(os.Stderr, "aoverride SHP error:%v\n",err)
+		os.Exit(1)
+	}
+	if address != as.h {
+		// fmt.Fprintf(os.Stderr, "NO aoverride dial(%s,%s) for %s host=%s\n", network, address, as.h, host)
+		os.Exit(1)
 		return net.Dial(network, address)
 	}
 	a := as.addrs[int(as.n)%len(as.addrs)] + ":" + port
