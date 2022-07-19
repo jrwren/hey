@@ -32,6 +32,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/exp/slices"
+
 	"golang.org/x/net/http2"
 )
 
@@ -256,18 +258,24 @@ type aoverride struct {
 	addrs []string
 	n     int32
 	h     string
+	seen  []string
 }
 
 func (as *aoverride) dial(ctx context.Context, network, address string) (net.Conn, error) {
-	_, port, err := net.SplitHostPort(address)
-	if err!=nil {
-		fmt.Fprintf(os.Stderr, "aoverride SHP error:%v\n",err)
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "aoverride SHP error:%v\n", err)
 		os.Exit(1)
 	}
-	if address != as.h {
-		// fmt.Fprintf(os.Stderr, "NO aoverride dial(%s,%s) for %s host=%s\n", network, address, as.h, host)
-		os.Exit(1)
-		return net.Dial(network, address)
+	if host != as.h {
+		c, err := net.Dial(network, address)
+		raddr := c.RemoteAddr()
+		if !slices.Contains(as.seen, raddr.String()) {
+			as.seen = append(as.seen, raddr.String())
+			fmt.Fprintf(os.Stderr, "NO aoverride dial(%s,%s) for %s host=%s", network, address, as.h, host)
+			fmt.Fprintf(os.Stderr, "!! dialed %s\n", raddr)
+		}
+		return c, err
 	}
 	a := as.addrs[int(as.n)%len(as.addrs)] + ":" + port
 	atomic.AddInt32(&as.n, 1)
